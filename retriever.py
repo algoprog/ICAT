@@ -5,15 +5,20 @@ import faiss
 import nltk
 import numpy as np
 import math
+import configparser
 
 from typing import List, Dict, Tuple
 from nltk.tokenize import word_tokenize
 from sentence_transformers import SentenceTransformer
 from pathlib import Path
 
-os.environ['HF_TOKEN'] = 'YOUR_HF_TOKEN'
+# Replace the environment variable assignments with config loading
+config = configparser.ConfigParser()
+config.read('config.ini')
 
-CACHE_PATH = 'hf_cache'
+CACHE_PATH = config['Paths']['CACHE_PATH']
+os.environ['HF_TOKEN'] = config['Tokens']['HF_TOKEN']
+
 
 class Retriever:
     def __init__(self, model_name: str = "Snowflake/snowflake-arctic-embed-m", cache_dir: str = "cache", batch_size: int = 256):

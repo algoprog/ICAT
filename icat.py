@@ -6,6 +6,7 @@ import hashlib
 import argparse
 import logging
 import re
+import configparser
 
 import numpy as np
 import jsonlines
@@ -18,14 +19,18 @@ from pathlib import Path
 from retriever import Retriever
 from llm_eval import LLMEvaluator
 
-os.environ['HF_TOKEN'] = 'YOUR_HF_TOKEN'
-os.environ['BRAVE_API_KEY'] = 'YOUR_BRAVE_API_KEY'
+# Replace environment variable assignments with config loading
+config = configparser.ConfigParser()
+config.read('config.ini')
 
-CACHE_PATH = 'hf_cache'
+CACHE_PATH = config['Paths']['CACHE_PATH']
+os.environ['HF_TOKEN'] = config['Tokens']['HF_TOKEN']
 os.environ['TRANSFORMERS_CACHE'] = CACHE_PATH
 os.environ['HF_HOME'] = CACHE_PATH
 os.environ['HF_DATASETS_CACHE'] = CACHE_PATH
 os.environ['TORCH_HOME'] = CACHE_PATH
+
+os.environ['BRAVE_API_KEY'] = config['Tokens']['BRAVE_API_KEY']
 
 class ICAT:
     def __init__(self, 
@@ -36,7 +41,7 @@ class ICAT:
                  nli_batch_size: int = 8,
                  llm_batch_size: int = 4,
                  api_base_llm: str = "meta-llama/Llama-3.3-70B-Instruct",
-                 api_facts_llm: str = None,
+                 api_facts_llm: str = "meta-llama/Llama-3.3-70B-Instruct",
                  use_web_search: bool = False):
         # Initialize logging
         logging.basicConfig(
@@ -115,13 +120,12 @@ class ICAT:
     def _brave_search(self, query: str, max_results: int = 10, max_retries: int = 5, retry_delay: int = 1) -> List[Tuple[str, str]]:
         """
         Perform a search using Brave Search API and return top 10 results.
-        
-        Args:
-            query (str): The search query
-            
-        Returns:
-            List[Tuple[str, str]]: List of (title, snippet) tuples
         """
+        # Truncate query if too long (Brave has a limit)
+        max_query_length = 200
+        if len(query) > max_query_length:
+            query = query[:max_query_length] + "..."
+        
         url = "https://api.search.brave.com/res/v1/web/search"
         headers = {
             "Accept": "application/json",
@@ -131,7 +135,7 @@ class ICAT:
         
         params = {
             "q": query,
-            "count": max_results  # Request 10 results
+            "count": max_results
         }
         
         for attempt in range(max_retries):
@@ -178,12 +182,24 @@ class ICAT:
         return bool(prediction[0] > 0.5)  # Index 0 corresponds to entailment
 
     def _check_entailment_batch(self, premises: List[str], hypotheses: List[str]) -> List[bool]:
-        # Process multiple premise-hypothesis pairs at once
+        """Process multiple premise-hypothesis pairs at once"""
+        # Handle empty inputs
+        if not premises or not hypotheses:
+            return [False] * len(premises)
+        
+        # Filter out empty strings
+        valid_pairs = [(p, h) for p, h in zip(premises, hypotheses) if p.strip() and h.strip()]
+        
+        if not valid_pairs:
+            return [False] * len(premises)
+        
+        valid_premises, valid_hypotheses = zip(*valid_pairs)
+        
         inputs = self.nli_tokenizer(
-            premises, 
-            hypotheses, 
-            truncation=True, 
-            padding=True, 
+            list(valid_premises),
+            list(valid_hypotheses),
+            truncation=True,
+            padding=True,
             return_tensors="pt"
         )
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
@@ -192,7 +208,19 @@ class ICAT:
             output = self.nli_model(**inputs)
         
         predictions = torch.softmax(output.logits, -1).cpu().numpy()
-        return [bool(pred[0] > 0.5) for pred in predictions]  # Index 0 corresponds to entailment
+        valid_results = [bool(pred[0] > 0.5) for pred in predictions]
+        
+        # Map results back to original indices
+        final_results = []
+        valid_idx = 0
+        for p, h in zip(premises, hypotheses):
+            if p.strip() and h.strip():
+                final_results.append(valid_results[valid_idx])
+                valid_idx += 1
+            else:
+                final_results.append(False)
+            
+        return final_results
 
     def icat_score_m(self, model_responses: List[str], query_ids: Optional[List[str]] = None, queries: Optional[List[str]] = None) -> Tuple[List[Dict], Dict]:
         # Check if web search is being used
@@ -674,7 +702,7 @@ if __name__ == "__main__":
             model_name = file_path.split('/')[-1].replace('.jsonl', '')
             try:
                 with open(file_path, "r") as f:
-                    model_judgements = [json.loads(line) for line in f][:5]
+                    model_judgements = [json.loads(line) for line in f]
                     # Add model name to each judgment
                     for judgment in model_judgements:
                         judgment["model_name"] = model_name
@@ -696,42 +724,75 @@ if __name__ == "__main__":
         results_file.write("\nRunning evaluations and calculating correlations...\n")
         results_file.write(f"Number of human judgements: {len(human_scores)}\n")
 
+        # Manual evaluation
+        results_m, metrics_m = scorer.icat_score_m(query_ids=query_ids, queries=queries, model_responses=responses)
+        m_scores = [r["metrics"]["coverage"] for r in results_m]
+        results_file.write(f"Number of manual scores: {len(m_scores)}\n")
+
         # Semi-automatic evaluation
         results_s, metrics_s = scorer.icat_score_s(query_ids=query_ids, queries=queries, model_responses=responses)
         s_scores = [r["metrics"]["coverage"] for r in results_s]
         results_file.write(f"Number of semi-automatic scores: {len(s_scores)}\n")
-
-        # Verify lengths match before calculating correlations
-        if len(human_scores) != len(s_scores):
-            results_file.write(f"WARNING: Score length mismatch - human: {len(human_scores)}, semi-auto: {len(s_scores)}\n")
-            # Trim to shorter length to avoid errors
-            min_len = min(len(human_scores), len(s_scores))
-            human_scores = human_scores[:min_len]
-            s_scores = s_scores[:min_len]
-
-        s_pearson, _ = pearsonr(human_scores, s_scores)
-        s_spearman, _ = spearmanr(human_scores, s_scores)
-        s_kendall, _ = kendalltau(human_scores, s_scores)
 
         # Automatic evaluation
         results_a, metrics_a = scorer.icat_score_a(query_ids=query_ids, queries=queries, model_responses=responses)
         a_scores = [r["metrics"]["coverage"] for r in results_a]
         results_file.write(f"Number of automatic scores: {len(a_scores)}\n")
 
-        # Verify lengths match before calculating correlations
-        if len(human_scores) != len(a_scores):
-            results_file.write(f"WARNING: Score length mismatch - human: {len(human_scores)}, auto: {len(a_scores)}\n")
-            # Trim to shorter length to avoid errors
-            min_len = min(len(human_scores), len(a_scores))
-            human_scores = human_scores[:min_len]
-            a_scores = a_scores[:min_len]
+        # Calculate model-level averages and correlations
+        results_file.write("\nCalculating model-level correlations...\n")
+        
+        # Initialize lists to store model-level scores
+        model_level_human = []
+        model_level_manual = []
+        model_level_semi_auto = []
+        model_level_auto = []
+        
+        for model_name, judgements in model_judgements_dict.items():
+            # Get indices for this model
+            valid_indices = [i for i, j in enumerate(human_judgements) if j["model_name"] == model_name]
+            
+            # Calculate averages for this model
+            model_human_avg = np.mean([human_scores[i] for i in valid_indices])
+            model_m_avg = np.mean([m_scores[i] for i in valid_indices])
+            model_s_avg = np.mean([s_scores[i] for i in valid_indices])
+            model_a_avg = np.mean([a_scores[i] for i in valid_indices])
+            
+            # Append to model-level lists
+            model_level_human.append(model_human_avg)
+            model_level_manual.append(model_m_avg)
+            model_level_semi_auto.append(model_s_avg)
+            model_level_auto.append(model_a_avg)
+            
+            results_file.write(f"\n{model_name} Averages:\n")
+            results_file.write(f"  Human Score: {model_human_avg:.3f}\n")
+            results_file.write(f"  Manual Score: {model_m_avg:.3f}\n")
+            results_file.write(f"  Semi-Auto Score: {model_s_avg:.3f}\n")
+            results_file.write(f"  Auto Score: {model_a_avg:.3f}\n")
+        
+        # Calculate correlations using model-level averages
+        m_pearson, _ = pearsonr(model_level_human, model_level_manual)
+        m_spearman, _ = spearmanr(model_level_human, model_level_manual)
+        m_kendall, _ = kendalltau(model_level_human, model_level_manual)
+        
+        s_pearson, _ = pearsonr(model_level_human, model_level_semi_auto)
+        s_spearman, _ = spearmanr(model_level_human, model_level_semi_auto)
+        s_kendall, _ = kendalltau(model_level_human, model_level_semi_auto)
+        
+        a_pearson, _ = pearsonr(model_level_human, model_level_auto)
+        a_spearman, _ = spearmanr(model_level_human, model_level_auto)
+        a_kendall, _ = kendalltau(model_level_human, model_level_auto)
+        
+        # Write model-level correlation results
+        results_file.write("\nModel-Level Manual Evaluation Results:\n")
+        results_file.write(f"Average Coverage: {metrics_m['avg_coverage']:.3f}\n")
+        results_file.write(f"Average Factuality: {metrics_m['avg_factuality']:.3f}\n")
+        results_file.write(f"Average F1: {metrics_m['avg_f1']:.3f}\n")
+        results_file.write(f"Pearson correlation: {m_pearson:.3f}\n")
+        results_file.write(f"Spearman correlation: {m_spearman:.3f}\n")
+        results_file.write(f"Kendall correlation: {m_kendall:.3f}\n")
 
-        a_pearson, _ = pearsonr(human_scores, a_scores)
-        a_spearman, _ = spearmanr(human_scores, a_scores)
-        a_kendall, _ = kendalltau(human_scores, a_scores)
-
-        # Write results
-        results_file.write("\nSemi-Automatic Evaluation Results:\n")
+        results_file.write("\nModel-Level Semi-Automatic Evaluation Results:\n")
         results_file.write(f"Average Coverage: {metrics_s['avg_coverage']:.3f}\n")
         results_file.write(f"Average Factuality: {metrics_s['avg_factuality']:.3f}\n")
         results_file.write(f"Average F1: {metrics_s['avg_f1']:.3f}\n")
@@ -739,7 +800,7 @@ if __name__ == "__main__":
         results_file.write(f"Spearman correlation: {s_spearman:.3f}\n")
         results_file.write(f"Kendall correlation: {s_kendall:.3f}\n")
 
-        results_file.write("\nAutomatic Evaluation Results:\n")
+        results_file.write("\nModel-Level Automatic Evaluation Results:\n")
         results_file.write(f"Average Coverage: {metrics_a['avg_coverage']:.3f}\n")
         results_file.write(f"Average Factuality: {metrics_a['avg_factuality']:.3f}\n")
         results_file.write(f"Average F1: {metrics_a['avg_f1']:.3f}\n")
@@ -747,30 +808,22 @@ if __name__ == "__main__":
         results_file.write(f"Spearman correlation: {a_spearman:.3f}\n")
         results_file.write(f"Kendall correlation: {a_kendall:.3f}\n")
 
-        # Calculate per-model metrics
-        results_file.write("\nMetrics per Model:\n")
+        # Calculate per-model metrics (keeping this section for detailed analysis)
+        results_file.write("\nDetailed Metrics per Model:\n")
         for model_name, judgements in model_judgements_dict.items():
             # Get indices for this model from the original human_judgements list
-            model_indices = [i for i, j in enumerate(human_judgements) if j["model_name"] == model_name]
-            
-            # Filter indices that are within bounds of our trimmed scores lists
-            valid_indices = [i for i in model_indices if i < len(human_scores)]
-            
-            if not valid_indices:
-                results_file.write(f"\n{model_name}: Insufficient data for correlation analysis\n")
-                continue
-                
+            valid_indices = [i for i, j in enumerate(human_judgements) if j["model_name"] == model_name]
             model_human_scores = [human_scores[i] for i in valid_indices]
+            model_m_scores = [m_scores[i] for i in valid_indices]
             model_s_scores = [s_scores[i] for i in valid_indices]
             model_a_scores = [a_scores[i] for i in valid_indices]
 
-            # Only calculate correlations if we have valid data
-            if len(set(model_s_scores)) <= 1 or len(set(model_human_scores)) <= 1:
-                results_file.write(f"\n{model_name}: Constant scores detected - correlations undefined\n")
-                continue
-
             # Calculate correlations for this model
             try:
+                model_m_pearson, _ = pearsonr(model_human_scores, model_m_scores)
+                model_m_spearman, _ = spearmanr(model_human_scores, model_m_scores)
+                model_m_kendall, _ = kendalltau(model_human_scores, model_m_scores)
+
                 model_s_pearson, _ = pearsonr(model_human_scores, model_s_scores)
                 model_s_spearman, _ = spearmanr(model_human_scores, model_s_scores)
                 model_s_kendall, _ = kendalltau(model_human_scores, model_s_scores)
@@ -780,6 +833,10 @@ if __name__ == "__main__":
                 model_a_kendall, _ = kendalltau(model_human_scores, model_a_scores)
 
                 results_file.write(f"\n{model_name}:\n")
+                results_file.write("  Manual:\n")
+                results_file.write(f"    Pearson correlation: {model_m_pearson:.3f}\n")
+                results_file.write(f"    Spearman correlation: {model_m_spearman:.3f}\n")
+                results_file.write(f"    Kendall correlation: {model_m_kendall:.3f}\n")
                 results_file.write("  Semi-Automatic:\n")
                 results_file.write(f"    Pearson correlation: {model_s_pearson:.3f}\n")
                 results_file.write(f"    Spearman correlation: {model_s_spearman:.3f}\n")
@@ -792,6 +849,8 @@ if __name__ == "__main__":
                 results_file.write(f"\n{model_name}: Error calculating correlations: {str(e)}\n")
 
         # Save all results to JSON files
+        with open("manual_output.jsonl", "w+") as f:
+            json.dump(results_m, f)
         with open("semi_auto_output.jsonl", "w+") as f:
             json.dump(results_s, f)
         with open("auto_output.jsonl", "w+") as f:
