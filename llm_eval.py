@@ -26,7 +26,7 @@ PROMPT_TEMPLATE_FACTS = "Based on the given text, give all the mentioned atomic 
 class LLMEvaluator:
     def __init__(self, 
                  base_model: str = "meta-llama/Llama-3.1-8B-Instruct",
-                 fact_generation_lora_path: str = "fact-generator/llama31-8b-fact-generator_alpha16_rank64_batch16",
+                 fact_generation_lora_path: str = "algoprog/fact-generation-llama-3.1-8b-instruct-lora",
                  api_base_llm: str = "meta-llama/Llama-3.3-70B-Instruct",
                  api_facts_llm: str = None,
                  hf_token: Optional[str] = None,
