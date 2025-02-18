@@ -13,8 +13,6 @@ ICAT is a comprehensive framework for evaluating topic coverage and factual accu
 - Factual verification through retrieval-based grounding
 - Topic/aspect coverage assessment
 - Support for both corpus-based and web-based retrieval
-- Correlation analysis with human judgments
-- Configurable trade-off between factuality and coverage using β parameter
 
 ## Installation
 
