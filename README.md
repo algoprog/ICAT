@@ -62,8 +62,8 @@ scorer = ICAT(
     hf_token="your_huggingface_token",           
     brave_api_key="your_brave_search_key",       
     cache_path="./custom_cache",                 
-    openai_api_key="your_openai_key",           
-    openai_base_url="https://api.openai.com/v1", 
+    openai_api_key="your_openai-compatible_key",           
+    openai_base_url="https://api.deepinfra.com/v1/openai", # or any other provider
     vllm_logging_level="WARNING"
 )
 ```
