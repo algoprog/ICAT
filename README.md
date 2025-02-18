@@ -1,4 +1,6 @@
 # ICAT: Information Coverage & Accuracy in Text
+[![arxiv](https://img.shields.io/badge/arXiv-2501.03545-b31b1b.svg)](https://arxiv.org/abs/2501.03545)
+
 Evaluation framework for topic coverage and factuality in LLMs
 
 ICAT is a comprehensive framework for evaluating topic coverage and factual accuracy in Large Language Model (LLM) outputs. The framework provides three evaluation methods with varying levels of automation:
