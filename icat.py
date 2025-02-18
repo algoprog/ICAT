@@ -2,15 +2,14 @@ import os
 import json
 import torch
 import time
-import hashlib
 import argparse
 import logging
 import re
 import configparser
-
-import numpy as np
 import jsonlines
 import requests
+
+import numpy as np
 
 from scipy.stats import pearsonr, spearmanr, kendalltau
 from typing import List, Dict, Tuple, Optional
@@ -42,7 +41,13 @@ class ICAT:
                  llm_batch_size: int = 4,
                  api_base_llm: str = "meta-llama/Llama-3.3-70B-Instruct",
                  api_facts_llm: str = "meta-llama/Llama-3.3-70B-Instruct",
-                 use_web_search: bool = False):
+                 use_web_search: bool = False,
+                 hf_token: Optional[str] = None,
+                 brave_api_key: Optional[str] = None,
+                 cache_path: Optional[str] = None,
+                 openai_api_key: Optional[str] = None,
+                 openai_base_url: Optional[str] = None,
+                 vllm_logging_level: Optional[str] = None):
         # Initialize logging
         logging.basicConfig(
             level=logging.INFO,
@@ -51,6 +56,17 @@ class ICAT:
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
         
+        # Set environment variables if provided
+        if hf_token:
+            os.environ['HF_TOKEN'] = hf_token
+        if brave_api_key:
+            os.environ['BRAVE_API_KEY'] = brave_api_key
+        if cache_path:
+            os.environ['TRANSFORMERS_CACHE'] = cache_path
+            os.environ['HF_HOME'] = cache_path
+            os.environ['HF_DATASETS_CACHE'] = cache_path
+            os.environ['TORCH_HOME'] = cache_path
+        
         self.logger.info("Initializing CoverageScore...")
         self.use_web_search = use_web_search
         self.topk = 10
@@ -58,10 +74,18 @@ class ICAT:
         if not use_web_search:
             if corpus_path is None:
                 raise ValueError("corpus_path must be provided when not using web search")
-            self.retriever = Retriever()
+            self.retriever = Retriever(hf_token=hf_token)
             self.retriever.process_corpus(corpus_path)
         
-        self.llm_evaluator = LLMEvaluator(api_base_llm=api_base_llm, api_facts_llm=api_facts_llm)
+        self.llm_evaluator = LLMEvaluator(
+            api_base_llm=api_base_llm, 
+            api_facts_llm=api_facts_llm,
+            hf_token=hf_token,
+            openai_api_key=openai_api_key,
+            openai_base_url=openai_base_url,
+            vllm_logging_level=vllm_logging_level,
+            cache_path=cache_path
+        )
         self.qrels_lookup = {}
         
         # Make qrels loading optional
@@ -170,16 +194,6 @@ class ICAT:
                 break  # Don't retry on parsing errors
         
         return []
-
-    def _check_entailment(self, premise: str, hypothesis: str) -> bool:
-        inputs = self.nli_tokenizer(premise, hypothesis, truncation=True, return_tensors="pt")
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
-        
-        with torch.no_grad():
-            output = self.nli_model(**inputs)
-        
-        prediction = torch.softmax(output.logits[0], -1).cpu().numpy()
-        return bool(prediction[0] > 0.5)  # Index 0 corresponds to entailment
 
     def _check_entailment_batch(self, premises: List[str], hypotheses: List[str]) -> List[bool]:
         """Process multiple premise-hypothesis pairs at once"""
