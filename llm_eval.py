@@ -1,5 +1,6 @@
 import os
 import torch
+import configparser
 
 from typing import List, Optional, Tuple
 from vllm import EngineArgs, LLMEngine, RequestOutput, SamplingParams, TokensPrompt, LLM
@@ -8,12 +9,15 @@ from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from transformers import AutoTokenizer
 
-os.environ['OPENAI_API_KEY'] = 'YOUR_OPENAI_API_KEY'
-os.environ['OPENAI_BASE_URL'] = 'YOUR_OPENAI_BASE_URL'
-os.environ['HF_TOKEN'] = 'YOUR_HF_TOKEN'
+# Replace the environment variable assignments with config loading
+config = configparser.ConfigParser()
+config.read('config.ini')
 
-CACHE_PATH = 'hf_cache'
-os.environ['VLLM_LOGGING_LEVEL'] = 'ERROR'
+CACHE_PATH = config['Paths']['CACHE_PATH']
+os.environ['HF_TOKEN'] = config['Tokens']['HF_TOKEN']
+os.environ['VLLM_LOGGING_LEVEL'] = config['Logging']['VLLM_LOGGING_LEVEL']
+os.environ['OPENAI_API_KEY'] = config['Tokens']['OPENAI_API_KEY']
+os.environ['OPENAI_BASE_URL'] = config['URLs']['OPENAI_BASE_URL']
 
 OPENAI_CLIENT = OpenAI(api_key=os.environ['OPENAI_API_KEY'], base_url=os.environ['OPENAI_BASE_URL'])
 
@@ -24,21 +28,45 @@ class LLMEvaluator:
                  base_model: str = "meta-llama/Llama-3.1-8B-Instruct",
                  fact_generation_lora_path: str = "fact-generator/llama31-8b-fact-generator_alpha16_rank64_batch16",
                  api_base_llm: str = "meta-llama/Llama-3.3-70B-Instruct",
-                 api_facts_llm: str = None
-                 ):
+                 api_facts_llm: str = None,
+                 hf_token: Optional[str] = None,
+                 openai_api_key: Optional[str] = None,
+                 openai_base_url: Optional[str] = None,
+                 vllm_logging_level: Optional[str] = None,
+                 cache_path: Optional[str] = None):
+        
+        # Set environment variables if provided
+        if hf_token:
+            os.environ['HF_TOKEN'] = hf_token
+        if openai_api_key:
+            os.environ['OPENAI_API_KEY'] = openai_api_key
+        if openai_base_url:
+            os.environ['OPENAI_BASE_URL'] = openai_base_url
+        if vllm_logging_level:
+            os.environ['VLLM_LOGGING_LEVEL'] = vllm_logging_level
+        
         self.base_model = base_model
         self.fact_generation_lora_path = fact_generation_lora_path
         self.api_base_llm = api_base_llm
         self.api_facts_llm = api_facts_llm
+        self.cache_path = cache_path or CACHE_PATH
 
-        if self.api_facts_llm is not None or self.api_base_llm is not None:
+        # Initialize OpenAI client with provided credentials if available
+        if openai_api_key or openai_base_url:
+            global OPENAI_CLIENT
+            OPENAI_CLIENT = OpenAI(
+                api_key=os.environ.get('OPENAI_API_KEY'),
+                base_url=os.environ.get('OPENAI_BASE_URL')
+            )
+
+        if self.api_facts_llm is None or self.api_base_llm is None:
             self._initialize_model()
 
     def _initialize_model(self):
         self.model = LLM(
             model=self.base_model,
             enable_lora=True,
-            download_dir=CACHE_PATH,
+            download_dir=self.cache_path,
             dtype=torch.float16,
             gpu_memory_utilization=0.7,
             max_lora_rank=64,
@@ -48,7 +76,7 @@ class LLMEvaluator:
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.base_model, 
             trust_remote_code=True, 
-            cache_dir=CACHE_PATH
+            cache_dir=self.cache_path
         )
         self.tokenizer.padding_side = 'right'
         self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -87,7 +115,7 @@ class LLMEvaluator:
                 for future in as_completed(future_to_idx):
                     idx = future_to_idx[future]
                     response = future.result()
-                    results[idx] = response.split('\n') if response else []
+                    results[idx] = [fact for fact in response.split('\n') if fact.strip()] if response else []
             return results
 
         prompts = [self._build_prompt(PROMPT_TEMPLATE_FACTS + text) for text in texts]
@@ -110,10 +138,10 @@ class LLMEvaluator:
         for output in outputs:
             generated_text = output.outputs[0].text
             facts = generated_text.split('\n')
-            facts = [fact.strip() for fact in facts if fact.strip()]
+            facts = [fact.strip() for fact in facts if fact.strip()][1:]
             results.append(facts)
 
-        return results[1:]
+        return results
 
     def generate(self, texts: List[str]) -> List[str]:
         if self.api_base_llm:

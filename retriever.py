@@ -6,8 +6,7 @@ import nltk
 import numpy as np
 import math
 import configparser
-
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from nltk.tokenize import word_tokenize
 from sentence_transformers import SentenceTransformer
 from pathlib import Path
@@ -21,7 +20,13 @@ os.environ['HF_TOKEN'] = config['Tokens']['HF_TOKEN']
 
 
 class Retriever:
-    def __init__(self, model_name: str = "Snowflake/snowflake-arctic-embed-m", cache_dir: str = "cache", batch_size: int = 256):
+    def __init__(self, 
+                 model_name: str = "Snowflake/snowflake-arctic-embed-m", 
+                 cache_dir: str = "cache", 
+                 batch_size: int = 256,
+                 hf_token: Optional[str] = None):
+        if hf_token:
+            os.environ['HF_TOKEN'] = hf_token
         self.model = SentenceTransformer(model_name)
         self.batch_size = batch_size
         self.cache_dir = Path(cache_dir)
