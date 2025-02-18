@@ -1,4 +1,6 @@
 # ICAT: Information Coverage & Accuracy in Text
+[![arxiv](https://img.shields.io/badge/arXiv-2501.03545-b31b1b.svg)](https://arxiv.org/abs/2501.03545)
+
 Evaluation framework for topic coverage and factuality in LLMs
 
 ICAT is a comprehensive framework for evaluating topic coverage and factual accuracy in Large Language Model (LLM) outputs. The framework provides three evaluation methods with varying levels of automation:
@@ -62,8 +64,8 @@ scorer = ICAT(
     hf_token="your_huggingface_token",           
     brave_api_key="your_brave_search_key",       
     cache_path="./custom_cache",                 
-    openai_api_key="your_openai_key",           
-    openai_base_url="https://api.openai.com/v1", 
+    openai_api_key="your_openai-compatible_key",           
+    openai_base_url="https://api.deepinfra.com/v1/openai", # or any other provider
     vllm_logging_level="WARNING"
 )
 ```
@@ -95,3 +97,19 @@ results_a, metrics_a = scorer.icat_score_a(model_responses=responses)
 {"query_id": 2, "doc_id": "clueweb09-en0000-08-10769", "relevance": 1, "subtopic_id": 2}
 ...
 ```
+
+## Citation
+```
+@misc{samarinas2025factualaccuracyevaluatingcoverage,
+      title={Beyond Factual Accuracy: Evaluating Coverage of Diverse Factual Information in Long-form Text Generation}, 
+      author={Chris Samarinas and Alexander Krubner and Alireza Salemi and Youngwoo Kim and Hamed Zamani},
+      year={2025},
+      eprint={2501.03545},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2501.03545}, 
+}
+```
+
+## Acknowledgments
+This work was supported in part by the Center for Intelligent Information Retrieval (CIIR), in part by the Office of Naval Research contract number N000142212688, and in part by NSF grants #2143434 and #2106282. We acknowledge the support from the Austrian Marshall Plan Foundations, Stefan Wegenkittl, and Martin Uray who made Alexander Krubner's visit to the CIIR possible. Any opinions, findings and conclusions or recommendations expressed in this material are those of the authors and do not necessarily reflect those of the sponsors.
