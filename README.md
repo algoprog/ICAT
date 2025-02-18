@@ -97,3 +97,19 @@ results_a, metrics_a = scorer.icat_score_a(model_responses=responses)
 {"query_id": 2, "doc_id": "clueweb09-en0000-08-10769", "relevance": 1, "subtopic_id": 2}
 ...
 ```
+
+## Citation
+```
+@misc{samarinas2025factualaccuracyevaluatingcoverage,
+      title={Beyond Factual Accuracy: Evaluating Coverage of Diverse Factual Information in Long-form Text Generation}, 
+      author={Chris Samarinas and Alexander Krubner and Alireza Salemi and Youngwoo Kim and Hamed Zamani},
+      year={2025},
+      eprint={2501.03545},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2501.03545}, 
+}
+```
+
+## Acknowledgments
+This work was supported in part by the Center for Intelligent Information Retrieval (CIIR), in part by the Office of Naval Research contract number N000142212688, and in part by NSF grants #2143434 and #2106282. We acknowledge the support from the Austrian Marshall Plan Foundations, Stefan Wegenkittl, and Martin Uray who made Alexander Krubner's visit to the CIIR possible. Any opinions, findings and conclusions or recommendations expressed in this material are those of the authors and do not necessarily reflect those of the sponsors.
