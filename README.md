@@ -50,10 +50,12 @@ from icat import ICAT
 
 # Initialize with config.ini settings
 scorer = ICAT(
-    corpus_path="path/to/corpus.jsonl",  # Optional for corpus-based retrieval
+    corpus_path="path/to/corpus.jsonl",                 # Optional for corpus-based retrieval
     queries_path="path/to/queries.jsonl",
-    qrels_path="path/to/qrels.jsonl",    # Optional for ICAT-M
-    use_web_search=False                 # Set to True for web-based retrieval
+    qrels_path="path/to/qrels.jsonl",                   # Optional for ICAT-M
+    use_web_search=False,                               # Set to True for web-based retrieval
+    api_base_llm="meta-llama/Llama-3.3-70B-Instruct",   # Optional if you want to use a claim-aspect alignment model through API, default is None
+    api_facts_llm="meta-llama/Llama-3.3-70B-Instruct",  # Optional if you want to use an atomic fact generation model through API, default is None
 )
 
 # Or initialize with explicit credentials
@@ -62,6 +64,8 @@ scorer = ICAT(
     queries_path="path/to/queries.jsonl",
     qrels_path="path/to/qrels.jsonl",
     use_web_search=False,
+    api_base_llm="meta-llama/Llama-3.3-70B-Instruct",   # Optional if you want to use a claim-aspect alignment model through API, default is None
+    api_facts_llm="meta-llama/Llama-3.3-70B-Instruct",  # Optional if you want to use an atomic fact generation model through API, default is None
     hf_token="your_huggingface_token",           
     brave_api_key="your_brave_search_key",       
     cache_path="./custom_cache",                 
