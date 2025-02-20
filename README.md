@@ -20,7 +20,7 @@ ICAT is a comprehensive framework for evaluating topic coverage and factual accu
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/your-username/icat.git
+git clone https://github.com/algoprog/icat.git
 cd icat
 ```
 2. Install dependencies:
