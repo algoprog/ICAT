@@ -40,6 +40,7 @@ OPENAI_BASE_URL = https://api.openai.com/v1
 [Logging]
 VLLM_LOGGING_LEVEL = WARNING
 ```
+4. For running ICAT-M, you can use the same TREC dataset from our paper [here](https://huggingface.co/datasets/algoprog/TREC-ICAT/tree/main)
 
 ## Usage
 
